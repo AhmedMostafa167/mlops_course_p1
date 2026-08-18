@@ -9,7 +9,10 @@ Produces: model.pt (state_dict) and model_full.pt (full model, easiest to load)
 
 import torch
 import torch.nn as nn
+from pathlib import Path
 
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+MODEL_PATH = PROJECT_ROOT / "models" / "model_full.pt"
 # ---- 1. Fake data ----------------------
 torch.manual_seed(0)
 n = 2000
@@ -51,11 +54,7 @@ print(f"final loss: {loss.item():.4f}")
 # ---- 4. Save for deployment --------------------------------------------------
 model.eval()
 
-# Option A: state_dict only (smaller, but the loading code needs the class def)
-torch.save(model.state_dict(), "models/model.pt")
-
-# Option B: full model object (loads with zero code duplication — recommended
 # for your mini project since it keeps src/api.py simple)
-torch.save(model, "models/model_full.pt")
+torch.save(model, MODEL_PATH)
 
 print("Saved model.pt (state_dict) and model_full.pt (full model)")
