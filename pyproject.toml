@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.141.1",
+    "numpy>=2.5.2",
     "pydantic-settings>=2.15.0",
     "torch>=2.13.0",
     "uvicorn>=0.52.3",
@@ -16,5 +17,9 @@ package = true
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.12.0",
     "pytest>=9.1.1",
 ]
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
