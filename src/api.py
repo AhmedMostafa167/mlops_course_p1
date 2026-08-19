@@ -9,7 +9,7 @@ settings = get_settings()
 
 @lru_cache
 def get_model() -> RideDurationModel:
-    RideDurationModel(model_path=settings.model_path_resolved)
+    return RideDurationModel(model_path=settings.model_path_resolved)
 
 app = FastAPI(title="Ride Duration service")
 
