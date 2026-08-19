@@ -10,3 +10,6 @@ dependencies = [
     "torch>=2.13.0",
     "uvicorn>=0.52.3",
 ]
+
+[tool.uv]
+package = true
