@@ -18,19 +18,19 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    year: int = Field(default=2024, ge=2009, le=2100)
+    year: int = Field(default=2024)
     month: int = Field(default=1, ge=1, le=12)
+    features: list[str] = Field(default_factory=lambda: ["PU_DO", "trip_distance"])
+    target: str = Field(default="duration")
     data_dir: Path = PROJECT_ROOT / "data"
+    model_dir: Path = PROJECT_ROOT / "models"
     model_path: Path = PROJECT_ROOT / "models" / "model.pkl"
     report_path: Path = PROJECT_ROOT / "reports" / "module-1.md"
     validation_fraction: float = Field(default=0.20, gt=0, lt=1)
-    data_url_override: str | None = Field(default=None, validation_alias="DATA_URL")
 
     @property
     def data_url(self) -> str:
-        """Return the configured URL or the official monthly TLC URL."""
-        if self.data_url_override:
-            return self.data_url_override
+        """Return the configured URL."""
         return (
             "https://d37ci6vzurychx.cloudfront.net/trip-data/"
             f"green_tripdata_{self.year}-{self.month:02d}.parquet"
@@ -39,18 +39,6 @@ class Settings(BaseSettings):
     @property
     def data_path(self) -> Path:
         return self.data_dir / f"green_tripdata_{self.year}-{self.month:02d}.parquet"
-
-    @property
-    def model_dir(self) -> Path:
-        return self.model_path.parent
-
-    @property
-    def features(self) -> list[str]:
-        return ["PU_DO", "trip_distance"]
-
-    @property
-    def target(self) -> str:
-        return "duration"
 
     def ensure_project_directories(self) -> None:
         """Create directories required by the baseline workflow."""
