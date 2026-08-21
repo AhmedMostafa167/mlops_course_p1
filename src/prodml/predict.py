@@ -1,6 +1,6 @@
 from functools import wraps
 from pathlib import Path
-import logging
+from structlog import get_logger
 import pickle
 from time import perf_counter
 from typing import Any, Callable, TypeVar, Self
@@ -11,10 +11,11 @@ from sklearn.linear_model import LinearRegression
 
 from prodml.config import get_settings
 from prodml.features import to_feature_dicts
-
+from prodml.logging_config import configure_logging
 
 R = TypeVar("R")
-logger = logging.getLogger(__name__)
+configure_logging()
+logger = get_logger(__name__)
 
 
 def timed(func: Callable[..., R]) -> Callable[..., R]:
