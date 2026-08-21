@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     year: int = Field(default=2024, ge=2009, le=2100)
     month: int = Field(default=1, ge=1, le=12)
     data_dir: Path = PROJECT_ROOT / "data"
-    model_path: Path = PROJECT_ROOT / "models" / "baseline.pkl"
+    model_path: Path = PROJECT_ROOT / "models" / "model.pkl"
     report_path: Path = PROJECT_ROOT / "reports" / "module-1.md"
     validation_fraction: float = Field(default=0.20, gt=0, lt=1)
     data_url_override: str | None = Field(default=None, validation_alias="DATA_URL")
