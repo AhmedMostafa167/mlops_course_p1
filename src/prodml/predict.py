@@ -11,7 +11,6 @@ from sklearn.linear_model import LinearRegression
 
 from prodml.config import get_settings
 from prodml.features import to_feature_dicts
-from prodml.logging_config import configure_logging
 
 R = TypeVar("R")
 logger = get_logger(__name__)
@@ -24,7 +23,11 @@ def timed(func: Callable[..., R]) -> Callable[..., R]:
         start = perf_counter()
         result = func(*args, **kwargs)
         elapsed_ms = (perf_counter() - start) * 1000
-        logger.info("%s took %.2f ms", func.__name__, elapsed_ms)
+        logger.info(
+            "prediction_completed",
+            function=func.__name__,
+            elapsed_ms=round(elapsed_ms, 2),
+        )
         return result
 
     return wrapper

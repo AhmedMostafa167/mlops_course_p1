@@ -11,6 +11,9 @@ from prodml.config import get_settings
 from prodml.features import get_target, to_feature_dicts, prepare_features
 from prodml.logging_config import configure_logging
 from prodml.data import download_data, load_data, train_validation_split
+
+configure_logging()
+
 from structlog import get_logger
 
 logger = get_logger(__name__)
@@ -19,14 +22,14 @@ Metrics = dict[str, float]
 
 def fit_model(train_df: Any) -> tuple[LinearRegression, DictVectorizer]:
     """Fit the baseline vectorizer and linear regression model."""
-    logger.info("Fitting DictVectorizer and LinearRegression")
+    logger.info("model_fitting_started")
     vectorizer = DictVectorizer()
     X_train = vectorizer.fit_transform(to_feature_dicts(train_df))
     y_train = get_target(train_df).to_numpy()
 
     model = LinearRegression()
     model.fit(X_train, y_train)
-    logger.info("Fitting completed")
+    logger.info("model_fitting_completed")
     return model, vectorizer
 
 
@@ -36,14 +39,16 @@ def evaluate_model(
     validation_df: Any) -> Metrics:
     """Calculate validation RMSE and MAE in minutes."""
     
-    logger.info("Evaluating model")
+    logger.info("evaluation_started")
     X_valid = vectorizer.transform(to_feature_dicts(validation_df))
     y_valid = get_target(validation_df).to_numpy()
     predictions = model.predict(X_valid)
-    logger.info("Evaluation completed")
+    rmse = float(np.sqrt(mean_squared_error(y_valid, predictions)))
+    mae = float(mean_absolute_error(y_valid, predictions))
+    logger.info("evaluation_completed", rmse=rmse, mae=mae)
     return {
-        "rmse": float(np.sqrt(mean_squared_error(y_valid, predictions))),
-        "mae": float(mean_absolute_error(y_valid, predictions)),
+        "rmse": rmse,
+        "mae": mae,
     }
 
 
@@ -86,7 +91,6 @@ def save_model(
 
 
 def main() -> None:
-    configure_logging()
     download_data()
     data = load_data()
     prepared = prepare_features(data)
