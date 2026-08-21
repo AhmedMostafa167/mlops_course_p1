@@ -14,7 +14,6 @@ from prodml.features import to_feature_dicts
 from prodml.logging_config import configure_logging
 
 R = TypeVar("R")
-configure_logging()
 logger = get_logger(__name__)
 
 

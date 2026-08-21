@@ -4,6 +4,9 @@ from urllib.request import urlretrieve
 import pandas as pd
 
 from prodml.config import get_settings
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 REQUIRED_COLUMNS = [

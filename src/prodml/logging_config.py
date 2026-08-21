@@ -8,7 +8,7 @@ def configure_logging():
             structlog.contextvars.merge_contextvars,
             structlog.processors.TimeStamper(fmt="iso"),
             structlog.processors.add_log_level,
-            structlog.processors.add_logger_name,
+            structlog.stdlib.add_logger_name,
             structlog.processors.EventRenamer("message"),
             structlog.processors.JSONRenderer(),
 

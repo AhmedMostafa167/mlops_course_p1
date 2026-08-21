@@ -8,11 +8,11 @@ from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 
 from prodml.config import get_settings
-from prodml.features import get_target, to_feature_dicts
+from prodml.features import get_target, to_feature_dicts, prepare_features
 from prodml.logging_config import configure_logging
+from prodml.data import download_data, load_data, train_validation_split
 from structlog import get_logger
 
-configure_logging()
 logger = get_logger(__name__)
 Metrics = dict[str, float]
 
@@ -51,11 +51,15 @@ def save_model(
     model: LinearRegression,
     vectorizer: DictVectorizer,
     metrics: Metrics,
-    model_path: Path | None = None) -> Path:
+    model_path: Path | None = None,
+) -> Path:
     """Persist the fitted model, vectorizer, metadata, and metrics."""
     settings = get_settings()
     settings.ensure_project_directories()
+
     output_path = model_path or settings.model_path
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
     artifacts: dict[str, Any] = {
         "model": model,
         "dv": vectorizer,
@@ -66,10 +70,37 @@ def save_model(
         "month": settings.month,
         "metrics": metrics,
     }
-    logger.info("Saving model to %s", output_path)
-    logger.info("Model artifacts: %s", **artifacts)
+
+    logger.info("model_save_started", path=str(output_path))
+
     with output_path.open("wb") as f_out:
         pickle.dump(artifacts, f_out)
+
+    logger.info(
+        "model_saved",
+        path=str(output_path),
+        rmse=metrics["rmse"],
+        mae=metrics["mae"],
+    )
     return output_path
 
 
+def main() -> None:
+    configure_logging()
+    download_data()
+    data = load_data()
+    prepared = prepare_features(data)
+    train_df, validation_df = train_validation_split(prepared)
+    model, vectorizer = fit_model(train_df=train_df)
+    metrics = evaluate_model(model, vectorizer, validation_df)
+    model_path = save_model(model, vectorizer, metrics)
+    logger.info(
+        "training_finished",
+        rmse=metrics["rmse"],
+        mae=metrics["mae"],
+        model_path=str(model_path),
+    )
+
+
+if __name__ == "__main__":
+    main()
