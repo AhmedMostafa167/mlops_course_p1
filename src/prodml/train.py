@@ -14,9 +14,7 @@ from prodml.features import get_target, to_feature_dicts
 Metrics = dict[str, float]
 
 
-def fit_model(
-    train_df: Any,
-) -> tuple[LinearRegression, DictVectorizer]:
+def fit_model(train_df: Any) -> tuple[LinearRegression, DictVectorizer]:
     """Fit the baseline vectorizer and linear regression model."""
     vectorizer = DictVectorizer()
     X_train = vectorizer.fit_transform(to_feature_dicts(train_df))
@@ -30,8 +28,7 @@ def fit_model(
 def evaluate_model(
     model: LinearRegression,
     vectorizer: DictVectorizer,
-    validation_df: Any,
-) -> Metrics:
+    validation_df: Any) -> Metrics:
     """Calculate validation RMSE and MAE in minutes."""
     X_valid = vectorizer.transform(to_feature_dicts(validation_df))
     y_valid = get_target(validation_df).to_numpy()
@@ -47,8 +44,7 @@ def save_model(
     model: LinearRegression,
     vectorizer: DictVectorizer,
     metrics: Metrics,
-    model_path: Path | None = None,
-) -> Path:
+    model_path: Path | None = None) -> Path:
     """Persist the fitted model, vectorizer, metadata, and metrics."""
     settings = get_settings()
     settings.ensure_project_directories()

@@ -17,8 +17,7 @@ REQUIRED_COLUMNS = [
 
 def download_data(
     data_url: str | None = None,
-    data_path: Path | None = None,
-) -> Path:
+    data_path: Path | None = None,) -> Path:
     """Download the TLC Parquet file if it is not already present."""
     settings = get_settings()
     settings.ensure_project_directories()
@@ -38,8 +37,7 @@ def load_data(data_path: Path | None = None) -> pd.DataFrame:
 
 def train_validation_split(
     df: pd.DataFrame,
-    validation_fraction: float | None = None,
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+    validation_fraction: float | None = None,) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Split records chronologically, keeping the final fraction for validation."""
     fraction = validation_fraction or get_settings().validation_fraction
     if not 0 < fraction < 1:
