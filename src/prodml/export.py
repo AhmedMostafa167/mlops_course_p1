@@ -14,6 +14,7 @@ configure_logging()
 logger = structlog.get_logger(__name__)
 
 settings = get_settings()
+settings.ensure_project_directories()
 logger.info("model_loading_started", path=str(settings.model_path))
 predictor = DurationPredictor.load(settings.model_path)
 logger.info("model_loaded", path=str(settings.model_path))
@@ -50,7 +51,7 @@ logger.info("onnx_export_completed")
 
 onnx.checker.check_model(onnx_model)
 logger.info("onnx_model_validated")
-onnx_path = settings.model_path.parent / "model.onnx"
+onnx_path = settings.model_dir / "model.onnx"
 onnx_path.write_bytes(onnx_model.SerializeToString())
 logger.info("onnx_model_saved", path=str(onnx_path))
 
