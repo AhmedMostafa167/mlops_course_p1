@@ -42,7 +42,11 @@ def train_validation_split(
     df: pd.DataFrame,
     validation_fraction: float | None = None,) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Split records chronologically, keeping the final fraction for validation."""
-    fraction = validation_fraction or get_settings().validation_fraction
+    fraction = (
+        get_settings().validation_fraction
+        if validation_fraction is None
+        else validation_fraction
+    )
     if not 0 < fraction < 1:
         raise ValueError("validation_fraction must be between 0 and 1")
 
