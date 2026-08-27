@@ -1,7 +1,8 @@
 from pathlib import Path
 import pickle
+import tempfile
+import mlflow
 from typing import Any
-
 import numpy as np
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.linear_model import LinearRegression
@@ -19,14 +20,13 @@ from structlog import get_logger
 logger = get_logger(__name__)
 Metrics = dict[str, float]
 
-
 def fit_model(train_df: Any) -> tuple[LinearRegression, DictVectorizer]:
     """Fit the baseline vectorizer and linear regression model."""
     logger.info("model_fitting_started")
     vectorizer = DictVectorizer()
     X_train = vectorizer.fit_transform(to_feature_dicts(train_df))
     y_train = get_target(train_df).to_numpy()
-
+    
     model = LinearRegression()
     model.fit(X_train, y_train)
     logger.info("model_fitting_completed")
@@ -91,13 +91,59 @@ def save_model(
 
 
 def main() -> None:
+    settings = get_settings()
+
+    mlflow.set_tracking_uri(uri=settings.TRACKING_URI)
+    mlflow.set_experiment(settings.EXPERIMENT_NAME)
+
     download_data()
+
     data = load_data()
     prepared = prepare_features(data)
     train_df, validation_df = train_validation_split(prepared)
-    model, vectorizer = fit_model(train_df=train_df)
-    metrics = evaluate_model(model, vectorizer, validation_df)
-    model_path = save_model(model, vectorizer, metrics)
+
+    with mlflow.start_run(run_name="lr_with_dictvectorizer"):
+
+        model, vectorizer = fit_model(train_df=train_df)
+
+        metrics = evaluate_model(
+            model,
+            vectorizer,
+            validation_df,
+        )
+
+        mlflow.log_metrics(metrics)
+
+        mlflow.log_params({
+            "fit_intercept": model.fit_intercept,
+            "copy_X": model.copy_X,
+            "n_jobs": model.n_jobs,
+        })
+
+        # Log vectorizer
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            vectorizer_path = Path(tmp_dir) / "vectorizer.pkl"
+
+            with open(vectorizer_path, "wb") as f:
+                pickle.dump(vectorizer, f)
+
+            mlflow.log_artifact(
+                str(vectorizer_path),
+                artifact_path="vectorizer",
+            )
+
+        # Log model
+        mlflow.sklearn.log_model(
+            model,
+            "model",
+        )
+
+    model_path = save_model(
+        model,
+        vectorizer,
+        metrics,
+    )
+
     logger.info(
         "training_finished",
         rmse=metrics["rmse"],

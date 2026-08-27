@@ -27,7 +27,10 @@ class Settings(BaseSettings):
     model_path: Path = PROJECT_ROOT / "models" / "model.pkl"
     report_path: Path = PROJECT_ROOT / "reports" / "module-1.md"
     validation_fraction: float = Field(default=0.20, gt=0, lt=1)
-
+    TRACKING_URI: str
+    EXPERIMENT_NAME: str
+    REGISTERED_MODEL_NAME: str
+    PRODUCTION_MODEL_URI: str
     @property
     def data_url(self) -> str:
         """Return the configured URL."""
