@@ -1,7 +1,7 @@
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,10 +27,18 @@ class Settings(BaseSettings):
     model_path: Path = PROJECT_ROOT / "models" / "model.pkl"
     report_path: Path = PROJECT_ROOT / "reports" / "module-1.md"
     validation_fraction: float = Field(default=0.20, gt=0, lt=1)
-    TRACKING_URI: str
+    MLFLOW_TRACKING_URI: str = Field(
+        default="http://localhost:5000",
+        validation_alias=AliasChoices("MLFLOW_TRACKING_URI", "TRACKING_URI"),
+    )
     EXPERIMENT_NAME: str
     REGISTERED_MODEL_NAME: str
     PRODUCTION_MODEL_URI: str
+
+    @property
+    def TRACKING_URI(self) -> str:
+        """Backward-compatible alias for the MLflow tracking URI."""
+        return self.MLFLOW_TRACKING_URI
     @property
     def data_url(self) -> str:
         """Return the configured URL."""
