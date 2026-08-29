@@ -101,8 +101,8 @@ def fit_model(
     model_type = _validate_model_type(model_type)
     logger.info("model_fitting_started", model_type=model_type)
 
-    vectorizer = DictVectorizer(sparse=model_type != "mlp")
-    X_train = vectorizer.fit_transform(to_feature_dicts(train_df)).astype(np.float32)    
+    vectorizer = DictVectorizer(sparse=model_type != "mlp", dtype=np.float32)
+    X_train = vectorizer.fit_transform(to_feature_dicts(train_df)) 
     y_train = get_target(train_df).to_numpy(dtype=np.float32)
 
     if model_type == "lr":
