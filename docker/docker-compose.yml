@@ -1,54 +1,47 @@
+version: "3.7"
 services:
+  # PostgreSQL database
   postgres:
-    image: postgres:16-alpine
-    restart: unless-stopped
+    image: postgres:latest
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-mlflow}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mlflow}
-      POSTGRES_DB: ${POSTGRES_DB:-mlflow}
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: mlflowdb
     ports:
-      - "${POSTGRES_PORT:-5432}:5432"
+      - 5432:5432
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
+      - ./postgres-data:/var/lib/postgresql
 
-  mlflow:
-    build:
-      context: .
-      dockerfile: mlflow.Dockerfile
-      args:
-        MLFLOW_VERSION: ${MLFLOW_VERSION:-3.15.2}
-    restart: unless-stopped
+  # MinIO server
+  minio:
+    image: minio/minio
+    expose:
+      - "9000"
+    ports:
+      - "9000:9000"
+      # MinIO Console is available at http://localhost:9001
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: "minio_user"
+      MINIO_ROOT_PASSWORD: "minio_password"
+    healthcheck:
+      test: timeout 5s bash -c ':> /dev/tcp/127.0.0.1/9000' || exit 1
+      interval: 1s
+      timeout: 10s
+      retries: 5
+    command: server /data --console-address ":9001"
+  # Create a bucket named "bucket" if it doesn't exist
+  minio-create-bucket:
+    image: minio/mc
     depends_on:
-      postgres:
+      minio:
         condition: service_healthy
-    command:
-      - mlflow
-      - server
-      - --host
-      - 0.0.0.0
-      - --port
-      - "5000"
-      - --backend-store-uri
-      - postgresql+psycopg2://${POSTGRES_USER:-mlflow}:${POSTGRES_PASSWORD:-mlflow}@postgres:5432/${POSTGRES_DB:-mlflow}
-      - --artifacts-destination
-      - /mlflow/artifacts
-      - --allowed-hosts
-      - "localhost:*,127.0.0.1:*,mlflow:*"
-    ports:
-      - "${MLFLOW_PORT:-5000}:5000"
-    volumes:
-      - mlflow-artifacts:/mlflow/artifacts
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:5000/version')\""]
-      interval: 10s
-      timeout: 5s
-      retries: 20
-
-volumes:
-  postgres-data:
-  mlflow-artifacts:
+    entrypoint: >
+      bash -c "
+      mc alias set minio http://minio:9000 minio_user minio_password &&
+      if ! mc ls minio/bucket; then
+        mc mb minio/bucket
+      else
+        echo 'bucket already exists'
+      fi
+      "
