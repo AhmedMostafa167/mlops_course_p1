@@ -15,8 +15,7 @@ def test_predictor_loads_from_artifact(artifact_path):
 
     assert predictor.features == ["PU_DO", "trip_distance"]
     assert predictor.target == "duration"
-    assert set(predictor.metrics) == {"rmse", "mae"}
-
+    assert set(predictor.metrics) == {"rmse", "mae", "r2"}  
 
 def test_predict_one_returns_finite_float(predictor, record):
     prediction = predictor.predict_one(record)

@@ -11,6 +11,7 @@ from sklearn.linear_model import LinearRegression
 
 from prodml.config import get_settings
 from prodml.features import to_feature_dicts
+from prodml.persistence import load_model
 
 R = TypeVar("R")
 logger = get_logger(__name__)
@@ -54,8 +55,7 @@ class DurationPredictor:
     def load(cls, model_path: Path | None = None) -> Self:
         """Load a persisted duration model and return a ready predictor."""
         path = model_path or get_settings().model_path
-        with path.open("rb") as f_in:
-            artifacts: dict[str, Any] = pickle.load(f_in)
+        artifacts = load_model(path)
 
         return cls(
             model=artifacts["model"],

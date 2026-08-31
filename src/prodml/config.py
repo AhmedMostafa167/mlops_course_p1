@@ -39,6 +39,20 @@ class Settings(BaseSettings):
     MLFLOW_S3_ENDPOINT_URL: str = Field(default="http://localhost:9000")
     AWS_ACCESS_KEY_ID: str = Field(default="minio_user")
     AWS_SECRET_ACCESS_KEY: str = Field(default="minio_password")
+
+    POSTGRES_USER: str = Field(default="mlflow")
+    POSTGRES_PASSWORD: str = Field(default="mlflow")
+    POSTGRES_DB: str = Field(default="mlflow")
+    POSTGRES_PORT: int = Field(default=5432)
+    MLFLOW_PORT: int = Field(default=5000)
+    ARTIFACTS_BUCKET: str = Field(default="bucket")
+
+    @property
+    def backend_store_uri(self) -> str:
+        return (
+            f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+            f"@localhost:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+        )
     @property
     def TRACKING_URI(self) -> str:
         """Backward-compatible alias for the MLflow tracking URI."""
