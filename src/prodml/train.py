@@ -22,7 +22,7 @@ from prodml.config import get_settings
 from prodml.data import download_data, load_data, train_validation_split
 from prodml.features import get_target, prepare_features, to_feature_dicts
 from prodml.logging_config import configure_logging
-
+from time import perf_counter
 configure_logging()
 
 from structlog import get_logger
@@ -292,6 +292,27 @@ def _log_requirements_artifact() -> None:
         req_path.write_text(result.stdout)
         mlflow.log_artifact(str(req_path))
 
+def _log_residual_plot(
+    model: Any,
+    vectorizer: DictVectorizer,
+    validation_df: Any,
+) -> None:
+    """Log a residual plot (predicted vs. actual-minus-predicted) — same for any model type."""
+    X_valid = vectorizer.transform(to_feature_dicts(validation_df))
+    y_valid = get_target(validation_df).to_numpy(dtype=np.float32)
+    predictions = np.asarray(model.predict(X_valid)).reshape(-1)
+    residuals = y_valid - predictions
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.scatter(predictions, residuals, alpha=0.3, s=10)
+    ax.axhline(0, color="red", linestyle="--", linewidth=1)
+    ax.set_xlabel("Predicted duration")
+    ax.set_ylabel("Residual (actual − predicted)")
+    ax.set_title("Residual plot")
+    fig.tight_layout()
+
+    mlflow.log_figure(fig, "plots/residuals.png")
+    plt.close(fig)
 
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Train a taxi duration model")
@@ -305,6 +326,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(argv)
     model_type: ModelType = args.model_type
     settings = get_settings()
+    settings.export_s3_env()
     logger.info(
         "mlflow_tracking_setup_started",
         tracking_uri=settings.MLFLOW_TRACKING_URI,
@@ -336,8 +358,13 @@ def main(argv: Sequence[str] | None = None) -> None:
     }[model_type]
     with mlflow.start_run(run_name=run_name):
         _log_requirements_artifact()
+        start = perf_counter()
         model, vectorizer = fit_model(train_df=train_df, model_type=model_type)
+        end = perf_counter()
+        mlflow.log_metric(key="train_time", value=end-start)
         metrics = evaluate_model(model, vectorizer, validation_df)
+        _log_residual_plot(model, vectorizer, validation_df)
+
         if model_type!="mlp":
             _log_feature_importance_plot(model, vectorizer, model_type)        
         mlflow.log_metrics(metrics)

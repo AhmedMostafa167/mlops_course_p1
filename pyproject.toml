@@ -5,6 +5,7 @@ description = "mini project for mlops course covering simple model serving using
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "dvc>=3.67.1",
     "fastapi>=0.141.1",
     "numpy>=2.5.2",
     "pandas<3",
