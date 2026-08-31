@@ -1,20 +1,23 @@
 from __future__ import annotations
-
+import os
 import argparse
 import pickle
 import tempfile
 from pathlib import Path
 from typing import Any, Literal, Sequence
-
+import subprocess
 import mlflow
 import numpy as np
 import torch
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from torch import nn
 from xgboost import XGBRegressor
-
+from sklearn.inspection import permutation_importance
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from prodml.config import get_settings
 from prodml.data import download_data, load_data, train_validation_split
 from prodml.features import get_target, prepare_features, to_feature_dicts
@@ -33,7 +36,7 @@ ModelType = Literal["lr", "xgboost", "mlp"]
 class MLPRegressor(nn.Module):
     """Small dense neural network with an sklearn-like prediction method."""
 
-    def __init__(self, input_dim: int, hidden_dim: int = 32) -> None:
+    def __init__(self, input_dim: int, hidden_dim: int = 16) -> None:
         super().__init__()
         self.network = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
@@ -98,8 +101,8 @@ def fit_model(
     model_type = _validate_model_type(model_type)
     logger.info("model_fitting_started", model_type=model_type)
 
-    vectorizer = DictVectorizer(sparse=model_type != "mlp")
-    X_train = vectorizer.fit_transform(to_feature_dicts(train_df))
+    vectorizer = DictVectorizer(sparse=model_type != "mlp", dtype=np.float32)
+    X_train = vectorizer.fit_transform(to_feature_dicts(train_df)) 
     y_train = get_target(train_df).to_numpy(dtype=np.float32)
 
     if model_type == "lr":
@@ -140,8 +143,10 @@ def evaluate_model(
     predictions = np.asarray(model.predict(X_valid)).reshape(-1)
     rmse = float(np.sqrt(mean_squared_error(y_valid, predictions)))
     mae = float(mean_absolute_error(y_valid, predictions))
-    logger.info("evaluation_completed", rmse=rmse, mae=mae)
-    return {"rmse": rmse, "mae": mae}
+    r2 = float(r2_score(y_valid, predictions))
+
+    logger.info("evaluation_completed", rmse=rmse, mae=mae, r2=r2)
+    return {"rmse": rmse, "mae": mae, "r2": r2}
 
 
 def _infer_model_type(model: Any) -> ModelType:
@@ -238,6 +243,55 @@ def _log_model_params(model: Any, model_type: ModelType) -> None:
         }
     mlflow.log_params({"model_type": model_type, **params})
 
+def _log_run_tags(model_type: ModelType) -> None:
+    framework = {"lr": "sklearn", "xgboost": "xgboost", "mlp": "pytorch"}[model_type]
+    mlflow.set_tags({
+        "framework": framework,
+        "author": "Ahmed Mostafa",
+    })
+
+def _log_feature_importance_plot(
+    model: Any,
+    vectorizer: DictVectorizer,
+    model_type: ModelType,
+    n_top: int = 15,
+) -> None:
+    """Log native feature importance — LR coefficients or XGBoost's built-in importances.
+    No-op for MLP, which has no native importance measure."""
+
+    feature_names = vectorizer.get_feature_names_out()
+
+    if model_type == "lr":
+        importances = np.abs(model.coef_)
+        xlabel = "|coefficient|"
+    else:
+        importances = model.feature_importances_
+        xlabel = "importance (gain)"
+
+    order = np.argsort(importances)[-n_top:]
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.barh(feature_names[order], importances[order])
+    ax.set_xlabel(xlabel)
+    ax.set_title("Feature importance")
+    fig.tight_layout()
+
+    mlflow.log_figure(fig, "plots/feature_importance.png")
+
+def _log_requirements_artifact() -> None:
+    """Snapshot resolved dependency versions so this run's environment can be reproduced later,
+    independent of what pyproject.toml resolves to by the time someone reruns it."""
+    result = subprocess.run(
+        ["uv", "export", "--no-hashes"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        req_path = Path(tmp_dir) / "requirements.txt"
+        req_path.write_text(result.stdout)
+        mlflow.log_artifact(str(req_path))
+
 
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description="Train a taxi duration model")
@@ -251,7 +305,6 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(argv)
     model_type: ModelType = args.model_type
     settings = get_settings()
-
     logger.info(
         "mlflow_tracking_setup_started",
         tracking_uri=settings.MLFLOW_TRACKING_URI,
@@ -282,11 +335,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         "mlp": "mlp_with_dictvectorizer",
     }[model_type]
     with mlflow.start_run(run_name=run_name):
+        _log_requirements_artifact()
         model, vectorizer = fit_model(train_df=train_df, model_type=model_type)
         metrics = evaluate_model(model, vectorizer, validation_df)
+        if model_type!="mlp":
+            _log_feature_importance_plot(model, vectorizer, model_type)        
         mlflow.log_metrics(metrics)
         _log_model_params(model, model_type)
-
+        _log_run_tags(model_type)
         with tempfile.TemporaryDirectory() as tmp_dir:
             vectorizer_path = Path(tmp_dir) / "vectorizer.pkl"
             with vectorizer_path.open("wb") as f_out:
@@ -305,14 +361,16 @@ def main(argv: Sequence[str] | None = None) -> None:
             input_example=input_example,
         )
 
-    model_path = save_model(model, vectorizer, metrics, model_type=model_type)
-    logger.info(
-        "training_finished",
-        model_type=model_type,
-        rmse=metrics["rmse"],
-        mae=metrics["mae"],
-        model_path=str(model_path),
-    )
+        model_path = save_model(model, vectorizer, metrics, model_type=model_type)
+        logger.info(
+            "training_finished",
+            model_type=model_type,
+            rmse=metrics["rmse"],
+            mae=metrics["mae"],
+            model_path=str(model_path),
+        )
+        size_mb = os.path.getsize(model_path) / (1024 * 1024)
+        mlflow.log_metric("model_size_mb", size_mb)
 
 
 if __name__ == "__main__":
