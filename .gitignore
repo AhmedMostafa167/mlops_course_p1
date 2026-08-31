@@ -15,4 +15,5 @@ wheels/
 # assets
 models/
 data/
+/
 /mlflow.db
