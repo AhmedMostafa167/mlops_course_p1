@@ -1,6 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
-
+import os
+from functools import lru_cache
+from pathlib import Path
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -34,7 +36,9 @@ class Settings(BaseSettings):
     EXPERIMENT_NAME: str
     REGISTERED_MODEL_NAME: str
     PRODUCTION_MODEL_URI: str
-
+    MLFLOW_S3_ENDPOINT_URL: str = Field(default="http://localhost:9000")
+    AWS_ACCESS_KEY_ID: str = Field(default="minio_user")
+    AWS_SECRET_ACCESS_KEY: str = Field(default="minio_password")
     @property
     def TRACKING_URI(self) -> str:
         """Backward-compatible alias for the MLflow tracking URI."""
@@ -57,6 +61,12 @@ class Settings(BaseSettings):
         self.model_dir.mkdir(parents=True, exist_ok=True)
         self.report_path.parent.mkdir(parents=True, exist_ok=True)
 
+    def export_s3_env(self) -> None:
+        """Push S3 credentials into the process environment — boto3/MLflow's S3 client
+        reads os.environ directly, it doesn't go through this Settings object."""
+        os.environ.setdefault("MLFLOW_S3_ENDPOINT_URL", self.MLFLOW_S3_ENDPOINT_URL)
+        os.environ.setdefault("AWS_ACCESS_KEY_ID", self.AWS_ACCESS_KEY_ID)
+        os.environ.setdefault("AWS_SECRET_ACCESS_KEY", self.AWS_SECRET_ACCESS_KEY)
 
 @lru_cache
 def get_settings() -> Settings:
