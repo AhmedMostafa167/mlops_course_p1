@@ -1,4 +1,5 @@
 import mlflow
+from mlflow.exceptions import MlflowException
 
 import xgboost as xgb
 from sklearn.feature_extraction import DictVectorizer
@@ -42,36 +43,6 @@ def objective(trial):
         mlflow.log_metrics(metrics)
         return metrics["mae"]
 
-from mlflow.exceptions import MlflowException
-
-
-def promote_if_better(
-    client: mlflow.MlflowClient,
-    model_name: str,
-    candidate_version: str,
-    candidate_metric: float,
-    metric_name: str = "mae",
-    alias: str = "champion",
-) -> bool:
-    """Promote candidate_version to `alias` only if it beats the current holder on
-    metric_name (lower is better — matches rmse). Returns True if promotion happened."""
-    try:
-        current = client.get_model_version_by_alias(model_name, alias)
-        current_metric = client.get_run(current.run_id).data.metrics[metric_name]
-    except MlflowException:
-        # No champion exists yet — this is the first run, so it wins by default.
-        logger.info("no_existing_champion_found", promoting=candidate_version)
-        client.set_registered_model_alias(model_name, alias, candidate_version)
-        return True
-
-    logger.info("champion_comparison", current=current_metric, candidate=candidate_metric)
-    if candidate_metric < current_metric:
-        client.set_registered_model_alias(model_name, alias, candidate_version)
-        logger.info("champion_promoted", version=candidate_version)
-        return True
-
-    logger.info("champion_kept", version=current.version)
-    return False
 
 def main():
     settings = get_settings()
@@ -90,7 +61,7 @@ def main():
 
     mlflow.xgboost.autolog(log_models=False, log_datasets=False)
 
-    with mlflow.start_run():
+    with mlflow.start_run() as run:
         study = optuna.create_study(direction="minimize")
         study.optimize(objective, n_trials=50)
 
@@ -101,18 +72,19 @@ def main():
         model.fit(X_train, y_train)
         final_metrics = evaluate_model(model, vectorizer, validation_df)
         mlflow.log_metrics(final_metrics)
-        model_info = mlflow.xgboost.log_model(
+        mlflow.xgboost.log_model(
             xgb_model=model,
-            name="model",
-            model_format="json",    
-            registered_model_name=get_settings().REGISTERED_MODEL_NAME,
+            artifact_path="model",
+            model_format="json",
         )
-    client = mlflow.tracking.MlflowClient()
-    promote_if_better(
-        client,
-        model_name=settings.REGISTERED_MODEL_NAME,
-        candidate_version=model_info.registered_model_version,
-        candidate_metric=final_metrics["mae"],
-    )
+
+        candidate_run_id = run.info.run_id
+
+    model_version = mlflow.register_model(
+        model_uri=f"runs:/{candidate_run_id}/model",
+        name=settings.REGISTERED_MODEL_NAME,
+        )
+    logger.info("model_registered", model_version=model_version)
+    
 if __name__ == "__main__":
     main()
