@@ -1,0 +1,82 @@
+schema: '2.0'
+stages:
+  train_lr:
+    cmd: uv run python -m prodml.train --model lr
+    deps:
+    - path: data/green_tripdata_2024-01.parquet
+      hash: md5
+      md5: 33f3af0093a4bea95512fbd0df7f1b84
+      size: 1362284
+    - path: pyproject.toml
+      hash: md5
+      md5: da954f2f8b8015ed0ab254acbb381934
+      size: 1038
+    - path: src/prodml
+      hash: md5
+      md5: bd20e1ef8e0ca1c659533201724eb993.dir
+      size: 104744
+      nfiles: 33
+    - path: uv.lock
+      hash: md5
+      md5: 759a37105f2d61e51d1ec48974f4155e
+      size: 713305
+  train_xgboost:
+    cmd: uv run python -m prodml.train --model xgboost
+    deps:
+    - path: data/green_tripdata_2024-01.parquet
+      hash: md5
+      md5: 33f3af0093a4bea95512fbd0df7f1b84
+      size: 1362284
+    - path: pyproject.toml
+      hash: md5
+      md5: da954f2f8b8015ed0ab254acbb381934
+      size: 1038
+    - path: src/prodml
+      hash: md5
+      md5: bd20e1ef8e0ca1c659533201724eb993.dir
+      size: 104744
+      nfiles: 33
+    - path: uv.lock
+      hash: md5
+      md5: 759a37105f2d61e51d1ec48974f4155e
+      size: 713305
+  train_mlp:
+    cmd: uv run python -m prodml.train --model mlp
+    deps:
+    - path: data/green_tripdata_2024-01.parquet
+      hash: md5
+      md5: 33f3af0093a4bea95512fbd0df7f1b84
+      size: 1362284
+    - path: pyproject.toml
+      hash: md5
+      md5: da954f2f8b8015ed0ab254acbb381934
+      size: 1038
+    - path: src/prodml
+      hash: md5
+      md5: bd20e1ef8e0ca1c659533201724eb993.dir
+      size: 104744
+      nfiles: 33
+    - path: uv.lock
+      hash: md5
+      md5: 759a37105f2d61e51d1ec48974f4155e
+      size: 713305
+  tune_xgboost:
+    cmd: uv run python -m prodml.tuning
+    deps:
+    - path: data/green_tripdata_2024-01.parquet
+      hash: md5
+      md5: 33f3af0093a4bea95512fbd0df7f1b84
+      size: 1362284
+    - path: pyproject.toml
+      hash: md5
+      md5: da954f2f8b8015ed0ab254acbb381934
+      size: 1038
+    - path: src/prodml
+      hash: md5
+      md5: bd20e1ef8e0ca1c659533201724eb993.dir
+      size: 104744
+      nfiles: 33
+    - path: uv.lock
+      hash: md5
+      md5: 759a37105f2d61e51d1ec48974f4155e
+      size: 713305
