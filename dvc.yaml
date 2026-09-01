@@ -6,8 +6,7 @@ stages:
       - data/green_tripdata_2024-01.parquet
       - pyproject.toml
       - uv.lock
-    outs:
-    - models/
+
   train_xgboost:
     cmd: uv run python -m prodml.train --model xgboost
     deps:
@@ -15,8 +14,7 @@ stages:
       - data/green_tripdata_2024-01.parquet
       - pyproject.toml
       - uv.lock
-    outs:
-    - models/
+
   train_mlp:
     cmd: uv run python -m prodml.train --model mlp
     deps:
@@ -24,15 +22,12 @@ stages:
       - data/green_tripdata_2024-01.parquet
       - pyproject.toml
       - uv.lock
-    outs:
-    - models/
+
 
   tune_xgboost:
-    cmd: uv run -m src/prodml.tuning
+    cmd: uv run python -m prodml.tuning
     deps:
       - src/prodml
       - data/green_tripdata_2024-01.parquet
       - pyproject.toml
       - uv.lock
-    outs:
-    - models/
