@@ -13,6 +13,7 @@ from prodml.evaluate import evaluate_model
 from prodml.config import get_settings
 from structlog import get_logger
 from prodml.logging_config import configure_logging
+
 configure_logging()
 logger = get_logger(__name__)
 
@@ -83,8 +84,9 @@ def main():
     model_version = mlflow.register_model(
         model_uri=f"runs:/{candidate_run_id}/model",
         name=settings.REGISTERED_MODEL_NAME,
-        )
+    )
     logger.info("model_registered", model_version=model_version)
-    
+
+
 if __name__ == "__main__":
     main()

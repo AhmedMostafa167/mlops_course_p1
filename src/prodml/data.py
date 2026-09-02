@@ -46,7 +46,10 @@ def download_data(
     last_logged_at = 0.0
 
     try:
-        with urlopen(data_url, timeout=30) as response, partial_path.open("wb") as output:
+        with (
+            urlopen(data_url, timeout=30) as response,
+            partial_path.open("wb") as output,
+        ):
             total_bytes = int(response.headers.get("Content-Length") or 0)
             while chunk := response.read(1024 * 1024):
                 output.write(chunk)
@@ -56,7 +59,9 @@ def download_data(
                     logger.info(
                         "data_download_progress",
                         downloaded_mb=round(downloaded_bytes / 1024**2, 1),
-                        total_mb=round(total_bytes / 1024**2, 1) if total_bytes else None,
+                        total_mb=round(total_bytes / 1024**2, 1)
+                        if total_bytes
+                        else None,
                     )
                     last_logged_at = now
         partial_path.replace(data_path)

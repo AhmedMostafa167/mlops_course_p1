@@ -17,7 +17,9 @@ def test_metadata_reports_artifact_details(api_client, artifact_path):
     assert body["features"] == ["PU_DO", "trip_distance"]
     assert body["framework"] == "scikit-learn"
     assert body["training_date"]
-    assert body["artifact_hash"] == hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    assert (
+        body["artifact_hash"] == hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    )
 
 
 def test_predict_returns_contract_and_preserves_request_id(api_client, mock_predictor):

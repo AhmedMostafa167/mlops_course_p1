@@ -53,10 +53,12 @@ class Settings(BaseSettings):
             f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
             f"@localhost:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
         )
+
     @property
     def TRACKING_URI(self) -> str:
         """Backward-compatible alias for the MLflow tracking URI."""
         return self.MLFLOW_TRACKING_URI
+
     @property
     def data_url(self) -> str:
         """Return the configured URL."""
@@ -81,6 +83,7 @@ class Settings(BaseSettings):
         os.environ.setdefault("MLFLOW_S3_ENDPOINT_URL", self.MLFLOW_S3_ENDPOINT_URL)
         os.environ.setdefault("AWS_ACCESS_KEY_ID", self.AWS_ACCESS_KEY_ID)
         os.environ.setdefault("AWS_SECRET_ACCESS_KEY", self.AWS_SECRET_ACCESS_KEY)
+
 
 @lru_cache
 def get_settings() -> Settings:

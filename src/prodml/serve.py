@@ -17,11 +17,16 @@ def main() -> None:
     settings.export_s3_env()  # mlflow server, launched below, inherits this process's env
 
     command = [
-        "mlflow", "server",
-        "--backend-store-uri", settings.backend_store_uri,
-        "--artifacts-destination", f"s3://{settings.ARTIFACTS_BUCKET}",
-        "--host", "0.0.0.0",
-        "--port", str(settings.MLFLOW_PORT),
+        "mlflow",
+        "server",
+        "--backend-store-uri",
+        settings.backend_store_uri,
+        "--artifacts-destination",
+        f"s3://{settings.ARTIFACTS_BUCKET}",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        str(settings.MLFLOW_PORT),
     ]
     logger.info("mlflow_server_starting", command=" ".join(command))
     sys.exit(subprocess.call(command))

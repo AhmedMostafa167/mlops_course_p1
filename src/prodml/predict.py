@@ -19,6 +19,7 @@ logger = get_logger(__name__)
 
 def timed(func: Callable[..., R]) -> Callable[..., R]:
     """Print how long the decorated function takes to run."""
+
     @wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> R:
         start = perf_counter()

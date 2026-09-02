@@ -77,9 +77,9 @@ def get_model_metadata() -> MetadataResponse:
     artifact_bytes = settings.model_path.read_bytes()
     return MetadataResponse(
         model_version=f"linear-regression-{settings.year}-{settings.month:02d}",
-        training_date=datetime.fromtimestamp(
-            settings.model_path.stat().st_mtime
-        ).date().isoformat(),
+        training_date=datetime.fromtimestamp(settings.model_path.stat().st_mtime)
+        .date()
+        .isoformat(),
         features=settings.features,
         framework="scikit-learn",
         artifact_hash=sha256(artifact_bytes).hexdigest(),

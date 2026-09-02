@@ -31,13 +31,17 @@ class ExperimentTracker:
     training loops — the params and model artifact autolog would otherwise have handled.
     """
 
-    def __init__(self, model: Any, vectorizer: DictVectorizer, model_type: ModelType) -> None:
+    def __init__(
+        self, model: Any, vectorizer: DictVectorizer, model_type: ModelType
+    ) -> None:
         self.model = model
         self.vectorizer = vectorizer
         self.model_type = model_type
 
     def log_tags(self) -> None:
-        framework = {"lr": "sklearn", "xgboost": "xgboost", "mlp": "pytorch"}[self.model_type]
+        framework = {"lr": "sklearn", "xgboost": "xgboost", "mlp": "pytorch"}[
+            self.model_type
+        ]
         mlflow.set_tags({"framework": framework, "author": "Ahmed Mostafa"})
 
     def log_params(self) -> None:
