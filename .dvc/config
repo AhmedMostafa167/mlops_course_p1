@@ -1,4 +1,7 @@
 [core]
-    remote = myremote
+    remote = champion-store
 ['remote "myremote"']
     url = /tmp/dvcstore
+['remote "champion-store"']
+    url = s3://dorra-space/champion
+    endpointurl = https://s3.us-east-005.backblazeb2.com
