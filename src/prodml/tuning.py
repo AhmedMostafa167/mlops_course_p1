@@ -1,18 +1,15 @@
 import mlflow
-from mlflow.exceptions import MlflowException
-
-import xgboost as xgb
-from sklearn.feature_extraction import DictVectorizer
-import optuna
 import numpy as np
+import optuna
+from sklearn.feature_extraction import DictVectorizer
+from structlog import get_logger
+
+from prodml.config import get_settings
 from prodml.data import load_data, train_validation_split
+from prodml.evaluate import evaluate_model
 from prodml.features import get_target, prepare_features, to_feature_dicts
 from prodml.logging_config import configure_logging
 from prodml.train import fit_xgboost
-from prodml.evaluate import evaluate_model
-from prodml.config import get_settings
-from structlog import get_logger
-from prodml.logging_config import configure_logging
 
 configure_logging()
 logger = get_logger(__name__)

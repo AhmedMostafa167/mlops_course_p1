@@ -17,3 +17,4 @@ models/
 /mlflow.db
 docker/postgres-data/
 /models
+.coverage

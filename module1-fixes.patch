@@ -1,0 +1,568 @@
+diff --git a/.env.example b/.env.example
+index cea436c..28566fc 100644
+--- a/.env.example
++++ b/.env.example
+@@ -1,9 +1,5 @@
+ YEAR=2024
+ MONTH=1
+-DATA_DIR=data
+-MODEL_DIR=models
+-MODEL_PATH=models/model.pkl
+-REPORT_PATH=reports/module-1.md
+ VALIDATION_FRACTION=0.20
+ 
+ # MLflow tracking server exposed by docker/docker-compose.yml
+diff --git a/.gitignore b/.gitignore
+index 0f79760..4b28f7b 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -17,3 +17,4 @@ models/
+ /mlflow.db
+ docker/postgres-data/
+ /models
++.coverage
+diff --git a/pyproject.toml b/pyproject.toml
+index 4ca8581..6f93050 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -41,6 +41,10 @@ dev = [
+ [tool.pytest.ini_options]
+ pythonpath = ["."]
+ testpaths = ["tests"]
++addopts = "--cov=src/prodml --cov-fail-under=70"
++
++[tool.ruff.lint.flake8-bugbear]
++extend-immutable-calls = ["fastapi.Depends"]
+ 
+ [project.scripts]
+ prodml-train = "prodml.train:main"
+diff --git a/src/prodml/api/main.py b/src/prodml/api/main.py
+index 8665a7c..c40d50e 100644
+--- a/src/prodml/api/main.py
++++ b/src/prodml/api/main.py
+@@ -1,8 +1,8 @@
++from collections.abc import AsyncIterator
+ from contextlib import asynccontextmanager
+-from datetime import datetime
++from datetime import UTC, datetime
+ from hashlib import sha256
+ from time import perf_counter
+-from typing import AsyncIterator
+ from uuid import uuid4
+ 
+ import structlog
+@@ -23,7 +23,6 @@ from .schemas import (
+     PredictionResponse,
+ )
+ 
+-
+ configure_logging()
+ logger = structlog.get_logger(__name__)
+ 
+@@ -77,7 +76,9 @@ def get_model_metadata() -> MetadataResponse:
+     artifact_bytes = settings.model_path.read_bytes()
+     return MetadataResponse(
+         model_version=f"linear-regression-{settings.year}-{settings.month:02d}",
+-        training_date=datetime.fromtimestamp(settings.model_path.stat().st_mtime)
++        training_date=datetime.fromtimestamp(
++            settings.model_path.stat().st_mtime, tz=UTC
++        )
+         .date()
+         .isoformat(),
+         features=settings.features,
+diff --git a/src/prodml/config.py b/src/prodml/config.py
+index e1c5fe6..534d31a 100644
+--- a/src/prodml/config.py
++++ b/src/prodml/config.py
+@@ -1,12 +1,10 @@
+-from functools import lru_cache
+-from pathlib import Path
+ import os
+ from functools import lru_cache
+ from pathlib import Path
++
+ from pydantic import AliasChoices, Field
+ from pydantic_settings import BaseSettings, SettingsConfigDict
+ 
+-
+ PROJECT_ROOT = Path(__file__).resolve().parents[2]
+ 
+ 
+diff --git a/src/prodml/data.py b/src/prodml/data.py
+index e9df7f0..d365002 100644
+--- a/src/prodml/data.py
++++ b/src/prodml/data.py
+@@ -59,9 +59,9 @@ def download_data(
+                     logger.info(
+                         "data_download_progress",
+                         downloaded_mb=round(downloaded_bytes / 1024**2, 1),
+-                        total_mb=round(total_bytes / 1024**2, 1)
+-                        if total_bytes
+-                        else None,
++                        total_mb=(
++                            round(total_bytes / 1024**2, 1) if total_bytes else None
++                        ),
+                     )
+                     last_logged_at = now
+         partial_path.replace(data_path)
+diff --git a/src/prodml/export.py b/src/prodml/export.py
+index 70ec0db..252da22 100644
+--- a/src/prodml/export.py
++++ b/src/prodml/export.py
+@@ -1,77 +1,82 @@
++from __future__ import annotations
++
++from typing import Any
++
+ import numpy as np
+ import onnx
++import structlog
+ from onnxruntime import InferenceSession
+ from skl2onnx import to_onnx
+ 
+ from prodml.config import get_settings
+ from prodml.data import load_data, train_validation_split
+ from prodml.features import prepare_features, to_feature_dicts
+-from prodml.predict import DurationPredictor
+-import structlog
+ from prodml.logging_config import configure_logging
++from prodml.predict import DurationPredictor
+ 
+ configure_logging()
+ logger = structlog.get_logger(__name__)
+ 
+-settings = get_settings()
+-settings.ensure_project_directories()
+-logger.info("model_loading_started", path=str(settings.model_path))
+-predictor = DurationPredictor.load(settings.model_path)
+-logger.info("model_loaded", path=str(settings.model_path))
+-model = predictor.model
+-vectorizer = predictor.vectorizer
+-
+-raw_data = load_data()
+-prepared_data = prepare_features(raw_data)
+-_, validation_df = train_validation_split(prepared_data)
+-validation_df = validation_df.head(500)
+-logger.info("validation_rows_selected", rows=len(validation_df))
+-
+-feature_dicts = to_feature_dicts(validation_df)
+-X = vectorizer.transform(feature_dicts).toarray().astype(np.float32)
+-logger.info(
+-    "features_vectorized",
+-    rows=X.shape[0],
+-    columns=X.shape[1],
+-)
+-
+-logger.info("onnx_export_started")
+-try:
+-    onnx_model = to_onnx(
+-        model,
+-        X[:1],
+-        target_opset=12,
++
++def export_and_verify(
++    predictor: DurationPredictor, validation_df: Any, n_rows: int = 500
++) -> float:
++    """Export predictor.model to ONNX, validate it, and return the max pickle/ONNX prediction gap."""
++    settings = get_settings()
++    validation_df = validation_df.head(n_rows)
++    logger.info("validation_rows_selected", rows=len(validation_df))
++
++    feature_dicts = to_feature_dicts(validation_df)
++    X = predictor.vectorizer.transform(feature_dicts).toarray().astype(np.float32)
++    logger.info("features_vectorized", rows=X.shape[0], columns=X.shape[1])
++
++    logger.info("onnx_export_started")
++    try:
++        onnx_model = to_onnx(predictor.model, X[:1], target_opset=12)
++    except Exception:
++        logger.exception("onnx_export_failed")
++        raise
++    logger.info("onnx_export_completed")
++
++    onnx.checker.check_model(onnx_model)
++    logger.info("onnx_model_validated")
++
++    onnx_path = settings.model_dir / "model.onnx"
++    onnx_path.write_bytes(onnx_model.SerializeToString())
++    logger.info("onnx_model_saved", path=str(onnx_path))
++
++    session = InferenceSession(str(onnx_path), providers=["CPUExecutionProvider"])
++    input_name = session.get_inputs()[0].name
++
++    pred_skl = np.asarray(predictor.model.predict(X)).reshape(-1)
++    pred_ort = np.asarray(session.run(None, {input_name: X})[0]).reshape(-1)
++    max_difference = float(np.max(np.abs(pred_skl - pred_ort)))
++
++    logger.info(
++        "parity_check_completed",
++        rows=len(pred_skl),
++        max_difference=max_difference,
++        tolerance=1e-4,
+     )
+-except Exception:
+-    logger.exception("onnx_export_failed")
+-    raise
+-
+-
+-logger.info("onnx_export_completed")
+-
+-onnx.checker.check_model(onnx_model)
+-logger.info("onnx_model_validated")
+-onnx_path = settings.model_dir / "model.onnx"
+-onnx_path.write_bytes(onnx_model.SerializeToString())
+-logger.info("onnx_model_saved", path=str(onnx_path))
+-
+-session = InferenceSession(
+-    str(onnx_path),
+-    providers=["CPUExecutionProvider"],
+-)
+-input_name = session.get_inputs()[0].name
+-
+-pred_skl = model.predict(X)
+-pred_ort = session.run(None, {input_name: X})[0]
+-pred_ort = np.asarray(pred_ort).reshape(-1)
+-pred_skl = np.asarray(pred_skl).reshape(-1)
+-
+-max_difference = np.max(np.abs(pred_skl - pred_ort))
+-
+-logger.info(
+-    "parity_check_completed",
+-    rows=len(pred_skl),
+-    max_difference=max_difference,
+-    tolerance=1e-4,
+-)
+-assert np.allclose(pred_skl, pred_ort, atol=1e-4)
++    return max_difference
++
++
++def main() -> None:
++    settings = get_settings()
++    settings.ensure_project_directories()
++
++    logger.info("model_loading_started", path=str(settings.model_path))
++    predictor = DurationPredictor.load(settings.model_path)
++    logger.info("model_loaded", path=str(settings.model_path))
++
++    raw_data = load_data()
++    prepared_data = prepare_features(raw_data)
++    _, validation_df = train_validation_split(prepared_data)
++
++    max_difference = export_and_verify(predictor, validation_df, n_rows=500)
++    assert max_difference < 1e-4, f"ONNX parity failed: max difference {max_difference}"
++    logger.info("onnx_export_verified", max_difference=max_difference)
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/src/prodml/features.py b/src/prodml/features.py
+index a7c0603..3b3d81a 100644
+--- a/src/prodml/features.py
++++ b/src/prodml/features.py
+@@ -2,7 +2,6 @@ from typing import Any
+ 
+ import pandas as pd
+ 
+-
+ FEATURE_COLUMNS = ["PU_DO", "trip_distance"]
+ TARGET_COLUMN = "duration"
+ 
+diff --git a/src/prodml/predict.py b/src/prodml/predict.py
+index e154c65..15fc7cc 100644
+--- a/src/prodml/predict.py
++++ b/src/prodml/predict.py
+@@ -1,23 +1,22 @@
++from collections.abc import Callable
+ from functools import wraps
+ from pathlib import Path
+-from structlog import get_logger
+-import pickle
+ from time import perf_counter
+-from typing import Any, Callable, TypeVar, Self
++from typing import Any, Self
+ 
+ import pandas as pd
+ from sklearn.feature_extraction import DictVectorizer
+ from sklearn.linear_model import LinearRegression
++from structlog import get_logger
+ 
+ from prodml.config import get_settings
+ from prodml.features import to_feature_dicts
+ from prodml.persistence import load_model
+ 
+-R = TypeVar("R")
+ logger = get_logger(__name__)
+ 
+ 
+-def timed(func: Callable[..., R]) -> Callable[..., R]:
++def timed[R](func: Callable[..., R]) -> Callable[..., R]:
+     """Print how long the decorated function takes to run."""
+ 
+     @wraps(func)
+diff --git a/src/prodml/tracking.py b/src/prodml/tracking.py
+index 6aae876..06c6be7 100644
+--- a/src/prodml/tracking.py
++++ b/src/prodml/tracking.py
+@@ -97,7 +97,8 @@ class ExperimentTracker:
+ 
+     def log_requirements_artifact(self) -> None:
+         """Snapshot resolved dependency versions so this run's environment can be reproduced
+-        later, independent of what pyproject.toml resolves to by the time someone reruns it."""
++        later, independent of what pyproject.toml resolves to by the time someone reruns it.
++        """
+         result = subprocess.run(
+             ["uv", "export", "--no-hashes"],
+             capture_output=True,
+diff --git a/src/prodml/train.py b/src/prodml/train.py
+index 92ddaa5..eeaf0d0 100644
+--- a/src/prodml/train.py
++++ b/src/prodml/train.py
+@@ -2,8 +2,9 @@ from __future__ import annotations
+ 
+ import argparse
+ import os
++from collections.abc import Sequence
+ from time import perf_counter
+-from typing import Any, Sequence
++from typing import Any
+ 
+ import mlflow
+ import numpy as np
+diff --git a/src/prodml/tuning.py b/src/prodml/tuning.py
+index c7b7f37..5e6758e 100644
+--- a/src/prodml/tuning.py
++++ b/src/prodml/tuning.py
+@@ -1,18 +1,15 @@
+ import mlflow
+-from mlflow.exceptions import MlflowException
+-
+-import xgboost as xgb
+-from sklearn.feature_extraction import DictVectorizer
+-import optuna
+ import numpy as np
++import optuna
++from sklearn.feature_extraction import DictVectorizer
++from structlog import get_logger
++
++from prodml.config import get_settings
+ from prodml.data import load_data, train_validation_split
++from prodml.evaluate import evaluate_model
+ from prodml.features import get_target, prepare_features, to_feature_dicts
+ from prodml.logging_config import configure_logging
+ from prodml.train import fit_xgboost
+-from prodml.evaluate import evaluate_model
+-from prodml.config import get_settings
+-from structlog import get_logger
+-from prodml.logging_config import configure_logging
+ 
+ configure_logging()
+ logger = get_logger(__name__)
+diff --git a/tests/test_data.py b/tests/test_data.py
+new file mode 100644
+index 0000000..d6da937
+--- /dev/null
++++ b/tests/test_data.py
+@@ -0,0 +1,76 @@
++import pandas as pd
++import pytest
++
++from prodml.data import download_data, load_data, train_validation_split
++
++
++def test_download_data_skips_existing_file(tmp_path):
++    data_path = tmp_path / "trip_data.parquet"
++    data_path.write_bytes(b"already here")
++
++    result = download_data(
++        data_url="http://example.invalid/never-called", data_path=data_path
++    )
++
++    assert result == data_path
++    assert data_path.read_bytes() == b"already here"
++
++
++def test_download_data_cleans_up_partial_file_on_failure(tmp_path, monkeypatch):
++    data_path = tmp_path / "trip_data.parquet"
++
++    def _raise(*args, **kwargs):
++        raise OSError("network unreachable")
++
++    monkeypatch.setattr("prodml.data.urlopen", _raise)
++
++    with pytest.raises(OSError):
++        download_data(data_url="http://example.invalid", data_path=data_path)
++
++    assert not data_path.with_name(f"{data_path.name}.part").exists()
++    assert not data_path.exists()
++
++
++def test_load_data_returns_required_columns(tmp_path):
++    data_path = tmp_path / "trip_data.parquet"
++    frame = pd.DataFrame(
++        {
++            "lpep_pickup_datetime": pd.to_datetime(["2024-01-01"]),
++            "lpep_dropoff_datetime": pd.to_datetime(["2024-01-01 00:10:00"]),
++            "PULocationID": [74],
++            "DOLocationID": [75],
++            "trip_distance": [1.2],
++            "extra_column": ["ignored"],
++        }
++    )
++    frame.to_parquet(data_path)
++
++    loaded = load_data(data_path=data_path)
++
++    assert list(loaded.columns) == [
++        "lpep_pickup_datetime",
++        "lpep_dropoff_datetime",
++        "PULocationID",
++        "DOLocationID",
++        "trip_distance",
++    ]
++    assert len(loaded) == 1
++
++
++def test_train_validation_split_rejects_bad_fraction():
++    df = pd.DataFrame({"a": range(10)})
++    with pytest.raises(ValueError):
++        train_validation_split(df, validation_fraction=1.5)
++
++
++def test_train_validation_split_rejects_too_small_frame():
++    df = pd.DataFrame({"a": range(2)})
++    with pytest.raises(ValueError):
++        train_validation_split(df, validation_fraction=0.99)
++
++
++def test_train_validation_split_keeps_chronological_order():
++    df = pd.DataFrame({"a": range(10)})
++    train_df, val_df = train_validation_split(df, validation_fraction=0.2)
++    assert list(train_df["a"]) == list(range(8))
++    assert list(val_df["a"]) == list(range(8, 10))
+diff --git a/tests/test_model_types.py b/tests/test_model_types.py
+new file mode 100644
+index 0000000..f4529ab
+--- /dev/null
++++ b/tests/test_model_types.py
+@@ -0,0 +1,34 @@
++import numpy as np
++import pytest
++import torch
++from xgboost import XGBRegressor
++
++from prodml.model_types import MLPRegressor, infer_model_type, validate_model_type
++
++
++def test_validate_model_type_rejects_unknown_type():
++    with pytest.raises(ValueError):
++        validate_model_type("not-a-real-model")
++
++
++def test_infer_model_type_detects_xgboost():
++    assert infer_model_type(XGBRegressor()) == "xgboost"
++
++
++def test_infer_model_type_detects_mlp():
++    assert infer_model_type(MLPRegressor(input_dim=3)) == "mlp"
++
++
++def test_infer_model_type_rejects_unknown_model():
++    with pytest.raises(ValueError):
++        infer_model_type(object())
++
++
++def test_mlp_predict_returns_expected_shape():
++    torch.manual_seed(0)
++    model = MLPRegressor(input_dim=4, hidden_dim=8)
++    features = np.random.rand(5, 4).astype(np.float32)
++
++    predictions = model.predict(features)
++
++    assert predictions.shape == (5,)
+diff --git a/tests/test_serialization.py b/tests/test_serialization.py
+new file mode 100644
+index 0000000..c748256
+--- /dev/null
++++ b/tests/test_serialization.py
+@@ -0,0 +1,7 @@
++from prodml.export import export_and_verify
++
++
++def test_onnx_parity_within_tolerance(predictor, train_frame):
++    """Pickle and ONNX predictions must agree within the project's 1e-4 tolerance."""
++    max_difference = export_and_verify(predictor, train_frame, n_rows=len(train_frame))
++    assert max_difference < 1e-4
+diff --git a/tests/test_tracking.py b/tests/test_tracking.py
+new file mode 100644
+index 0000000..f2416f3
+--- /dev/null
++++ b/tests/test_tracking.py
+@@ -0,0 +1,68 @@
++import subprocess
++from unittest.mock import MagicMock
++
++import mlflow.pytorch  # noqa: F401  (forces the submodule to load before we patch it)
++import numpy as np
++import pytest
++
++from prodml.model_types import MLPRegressor
++from prodml.tracking import ExperimentTracker
++
++
++@pytest.fixture
++def mock_mlflow(monkeypatch):
++    mocks = {
++        "set_tags": MagicMock(),
++        "log_params": MagicMock(),
++        "log_metrics": MagicMock(),
++        "log_figure": MagicMock(),
++        "log_artifact": MagicMock(),
++    }
++    for name, mock in mocks.items():
++        monkeypatch.setattr(f"prodml.tracking.mlflow.{name}", mock)
++    monkeypatch.setattr("prodml.tracking.mlflow.pytorch.log_model", MagicMock())
++    monkeypatch.setattr(
++        "prodml.tracking.subprocess.run",
++        lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout="pandas==2.0\n"),
++    )
++    return mocks
++
++
++def test_lr_tracker_logs_everything_except_params_and_model(
++    mock_mlflow, predictor, train_frame
++):
++    tracker = ExperimentTracker(
++        model=predictor.model, vectorizer=predictor.vectorizer, model_type="lr"
++    )
++
++    tracker.log_all(metrics=predictor.metrics, validation_df=train_frame)
++
++    mock_mlflow["set_tags"].assert_called_once()
++    mock_mlflow["log_params"].assert_not_called()  # autolog already captured these
++    mock_mlflow["log_metrics"].assert_called_once_with(predictor.metrics)
++    assert mock_mlflow["log_figure"].call_count == 2  # residual + feature-importance
++    assert mock_mlflow["log_artifact"].call_count == 2  # requirements + vectorizer
++
++
++def test_mlp_tracker_logs_params(mock_mlflow):
++    model = MLPRegressor(input_dim=2, hidden_dim=4)
++    tracker = ExperimentTracker(model=model, vectorizer=None, model_type="mlp")
++
++    tracker.log_params()
++
++    mock_mlflow["log_params"].assert_called_once()
++
++
++def test_mlp_log_model_requires_input_example(mock_mlflow):
++    model = MLPRegressor(input_dim=2, hidden_dim=4)
++    tracker = ExperimentTracker(model=model, vectorizer=None, model_type="mlp")
++
++    with pytest.raises(ValueError):
++        tracker.log_model(input_example=None)
++
++
++def test_mlp_log_model_logs_when_input_example_given(mock_mlflow):
++    model = MLPRegressor(input_dim=2, hidden_dim=4)
++    tracker = ExperimentTracker(model=model, vectorizer=None, model_type="mlp")
++
++    tracker.log_model(input_example=np.zeros((1, 2), dtype=np.float32))

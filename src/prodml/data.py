@@ -59,9 +59,9 @@ def download_data(
                     logger.info(
                         "data_download_progress",
                         downloaded_mb=round(downloaded_bytes / 1024**2, 1),
-                        total_mb=round(total_bytes / 1024**2, 1)
-                        if total_bytes
-                        else None,
+                        total_mb=(
+                            round(total_bytes / 1024**2, 1) if total_bytes else None
+                        ),
                     )
                     last_logged_at = now
         partial_path.replace(data_path)

@@ -1,23 +1,22 @@
+from collections.abc import Callable
 from functools import wraps
 from pathlib import Path
-from structlog import get_logger
-import pickle
 from time import perf_counter
-from typing import Any, Callable, TypeVar, Self
+from typing import Any, Self
 
 import pandas as pd
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.linear_model import LinearRegression
+from structlog import get_logger
 
 from prodml.config import get_settings
 from prodml.features import to_feature_dicts
 from prodml.persistence import load_model
 
-R = TypeVar("R")
 logger = get_logger(__name__)
 
 
-def timed(func: Callable[..., R]) -> Callable[..., R]:
+def timed[R](func: Callable[..., R]) -> Callable[..., R]:
     """Print how long the decorated function takes to run."""
 
     @wraps(func)

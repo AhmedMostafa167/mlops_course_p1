@@ -1,0 +1,46 @@
+name: CI
+on: [push, pull_request]
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Ruff and Black
+        run: |
+          pip install ruff black
+
+      - name: Run Ruff
+        run: |
+          ruff check . 
+
+      - name: Run Black
+        run: |
+          black --check --diff .
+  test:
+    runs-on: ubuntu-latest
+    env:
+      EXPERIMENT_NAME: taxi-duration
+      REGISTERED_MODEL_NAME: taxi-duration
+      PRODUCTION_MODEL_URI: models:/taxi-duration/Production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          version: "latest"
+      - run: uv sync --extra dev
+      - run: uv run pytest
+      - run: |
+          uv run python scripts/check_mae_regression.py \
+            --new-metrics metrics/new_run.json \
+            --production-metrics metrics/production.json \
+            --max-regression-percent 5

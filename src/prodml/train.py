@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections.abc import Sequence
 from time import perf_counter
-from typing import Any, Sequence
+from typing import Any
 
 import mlflow
 import numpy as np

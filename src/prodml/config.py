@@ -1,11 +1,9 @@
-from functools import lru_cache
-from pathlib import Path
 import os
 from functools import lru_cache
 from pathlib import Path
+
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 

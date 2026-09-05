@@ -1,8 +1,8 @@
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import UTC, datetime
 from hashlib import sha256
 from time import perf_counter
-from typing import AsyncIterator
 from uuid import uuid4
 
 import structlog
@@ -22,7 +22,6 @@ from .schemas import (
     PredictionRequest,
     PredictionResponse,
 )
-
 
 configure_logging()
 logger = structlog.get_logger(__name__)
@@ -77,7 +76,9 @@ def get_model_metadata() -> MetadataResponse:
     artifact_bytes = settings.model_path.read_bytes()
     return MetadataResponse(
         model_version=f"linear-regression-{settings.year}-{settings.month:02d}",
-        training_date=datetime.fromtimestamp(settings.model_path.stat().st_mtime)
+        training_date=datetime.fromtimestamp(
+            settings.model_path.stat().st_mtime, tz=UTC
+        )
         .date()
         .isoformat(),
         features=settings.features,

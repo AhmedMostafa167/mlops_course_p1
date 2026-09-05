@@ -97,7 +97,8 @@ class ExperimentTracker:
 
     def log_requirements_artifact(self) -> None:
         """Snapshot resolved dependency versions so this run's environment can be reproduced
-        later, independent of what pyproject.toml resolves to by the time someone reruns it."""
+        later, independent of what pyproject.toml resolves to by the time someone reruns it.
+        """
         result = subprocess.run(
             ["uv", "export", "--no-hashes"],
             capture_output=True,

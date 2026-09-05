@@ -2,7 +2,6 @@ from typing import Any
 
 import pandas as pd
 
-
 FEATURE_COLUMNS = ["PU_DO", "trip_distance"]
 TARGET_COLUMN = "duration"
 
