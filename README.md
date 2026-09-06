@@ -1,175 +1,177 @@
 # NYC Green Taxi Duration Prediction Service
 
-This project is a Module 1 MLOps mini-project based on one month of NYC TLC green taxi trip data. The current implementation builds a reproducible baseline model, separates the workflow into reusable Python modules, adds environment-backed configuration and structured logging, exports the model to ONNX for comparison, and provides an initial FastAPI service.
+An MLOps pipeline built around one month of NYC TLC green taxi trip data, covering both mini projects of the course: a production-shaped FastAPI service (Module 1), and a self-gating training/promotion pipeline with MLflow, DVC, and CI (Module 2).
 
-The project predicts taxi-trip duration in minutes using two engineered features:
+The service predicts taxi-trip duration in minutes from two engineered features:
 
-- `PU_DO`: the pickup and drop-off location pair.
+- `PU_DO`: the pickup and drop-off location pair
+- `trip_distance`: the trip distance in miles
 
-- `trip_distance`: the trip distance in miles.
-
-The baseline model uses a scikit-learn `DictVectorizer` followed by `LinearRegression`.
+Three model families are supported end to end — `lr` (scikit-learn `LinearRegression`), `xgboost` (`XGBRegressor`), and `mlp` (a small PyTorch network) — all sharing the same `DictVectorizer` preprocessing, persistence format, ONNX export path, and API.
 
 ## Current project status
 
 | Area | Status |
 | --- | --- |
-| NYC TLC monthly Parquet download | Completed |
-| Duration target engineering | Completed |
-| `PU_DO` and `trip_distance` features | Completed |
-| Chronological train/validation split | Completed |
-| `DictVectorizer` and `LinearRegression` baseline | Completed |
-| RMSE and MAE evaluation | Completed |
-| Model persistence to Pickle | Completed |
-| Configuration with `pydantic-settings` | Completed |
-| Decomposition into `src/prodml/` modules | Completed |
-| Structured JSON logging | Initial implementation completed |
-| ONNX export and prediction parity | Initial implementation completed |
-| FastAPI application structure | Initial implementation completed |
-| Refactoring tests from the old model | **Not completed; future work** |
-| Dockerfile and container execution | **Not completed; future work** |
+| Packaged, tested, containerized FastAPI service | Completed |
+| Structured JSON logging with correlation IDs | Completed |
+| ONNX export + parity check, all three model types | Completed |
+| Non-root multi-stage Docker image | Completed |
+| MLflow experiment tracking (Postgres + MinIO) | Completed |
+| Hyperparameter tuning (Optuna) + model registry promotion | Completed |
+| Data + model versioning with DVC (remote: Backblaze B2) | Completed |
+| CI: lint → test → coverage gate → MAE regression gate → build/push | Completed |
+| Continuous training (manual, local-first — see below) | Completed |
+| Terraform / cloud-hosted MLflow | **Not implemented — deferred by choice** |
+| Cloud-triggered continuous training (`schedule`, `repository_dispatch`) | **Not implemented — requires a publicly reachable tracking server** |
 
 ## Repository structure
 
 ```
 .
 ├── data/
-│   └── green_tripdata_2024-01.parquet
-├── docs/
-│   └── main_py_explained.md
+│   └── green_tripdata_2024-01.parquet          # DVC-tracked
+├── docker/
+│   ├── Dockerfile
+│   └── docker-compose.yml                      # postgres + minio, for local MLflow
+├── metrics/
+│   ├── new_run.json                             # written by train.py every run
+│   └── production.json                          # current champion's metrics — the CI gate compares against this
 ├── models/
-│   ├── model.pkl
+│   ├── model.pkl                                # DVC-tracked champion
 │   └── model.onnx
 ├── notebooks/
 │   └── 00-baseline.ipynb
 ├── reports/
-│   └── module-1.md
-├── src/
-│   └── prodml/
-│       ├── __init__.py
-│       ├── config.py
-│       ├── data.py
-│       ├── export.py
-│       ├── features.py
-│       ├── logging_config.py
-│       ├── predict.py
-│       ├── train.py
-│       └── api/
-│           ├── __init__.py
-│           ├── main.py
-│           └── schemas.py
+│   ├── module-1.md
+│   └── module-2.md
+├── scripts/
+│   ├── benchmark_serialization.py
+│   └── check_mae_regression.py
+├── src/prodml/
+│   ├── config.py            # pydantic-settings — all paths/env, no hardcoding
+│   ├── data.py               # download / load / train-validation split
+│   ├── features.py           # PU_DO, target engineering, feature dicts
+│   ├── model_types.py        # ModelType, MLPRegressor, infer/validate helpers
+│   ├── persistence.py        # save_model / load_model (pickle bundle)
+│   ├── evaluate.py           # RMSE / MAE / R²
+│   ├── train.py              # fits lr/xgboost/mlp, logs to MLflow, writes metrics/new_run.json
+│   ├── tuning.py             # Optuna sweep on xgboost, registers + promotes the winner
+│   ├── tracking.py           # ExperimentTracker — params/metrics/artifacts/tags to MLflow
+│   ├── registry.py           # promote_if_better() — None → Staging → Production
+│   ├── predict.py            # DurationPredictor: .load(), .load_from_registry(), predict_one/batch
+│   ├── export.py             # model-agnostic ONNX export + parity check
+│   ├── serve.py              # launches `mlflow server` as a host process
+│   ├── logging_config.py
+│   └── api/
+│       ├── main.py           # FastAPI app, lifespan model loading
+│       └── schemas.py
 ├── tests/
+├── .github/workflows/ci.yml
+├── .dockerignore
+├── .pre-commit-config.yaml
 ├── .env.example
 ├── pyproject.toml
 └── uv.lock
 ```
 
-Each module has one primary responsibility:
-
-| Module | Responsibility |
-| --- | --- |
-| `config.py` | Loads paths and settings from environment variables using Pydantic Settings |
-| `data.py` | Downloads the monthly Parquet file, loads required columns, and creates the train/validation split |
-| `features.py` | Creates the duration target, filters invalid rows, builds `PU_DO`, and prepares feature dictionaries |
-| `train.py` | Fits the vectorizer and regression model, evaluates metrics, and saves the Pickle artifact |
-| `predict.py` | Loads the saved model and exposes `predict_one()` and `predict_batch()` |
-| `export.py` | Exports the fitted scikit-learn model to ONNX and compares predictions |
-| `logging_config.py` | Configures structured JSON logging |
-| `api/main.py` | Creates the FastAPI application and defines the service endpoints |
-| `api/schemas.py` | Defines Pydantic request and response models |
-
 ## Environment configuration
 
-The application reads its configuration from `.env` through `pydantic-settings`. Copy the example file before running the project:
+The application reads its configuration from `.env` through `pydantic-settings`. Copy the example file before running anything:
 
 ```bash
 cp .env.example .env
 ```
 
-The environment file controls values such as the data month, data directory, model path, report path, and validation fraction. Do not commit private or machine-specific values from `.env`; commit `.env.example` instead.
+Only three settings are required with no default (`EXPERIMENT_NAME`, `REGISTERED_MODEL_NAME`, `PRODUCTION_MODEL_URI`); everything else — data paths, MLflow/Postgres/MinIO connection details — has a sane default matching `docker/docker-compose.yml`. Never commit `.env`; commit `.env.example` instead.
 
 ## Installation
 
-Install the project with its development dependencies:
+```bash
+uv sync --group dev
+uv run pre-commit install
+```
+
+Dev dependencies live under `[dependency-groups]` in `pyproject.toml` — use `--group dev`, not `--extra dev` (there is no `dev` extra). Run all commands from the repository root.
+
+## Local infrastructure
+
+MLflow's backend store (Postgres) and artifact store (MinIO) run in Docker; the MLflow server itself runs as a host process so it can be reached at `localhost` from anywhere else on your machine.
 
 ```bash
-uv sync --extra dev
+docker compose -f docker/docker-compose.yml up -d
+uv run python -m prodml.serve   # leave running in its own terminal
 ```
 
-Run commands from the repository root so that the local `prodml` package is imported correctly.
+MLflow UI: `http://localhost:5000`. MinIO console: `http://localhost:9001`.
 
-## Baseline workflow
-
-Run the baseline from the repository root:
+## Training
 
 ```bash
-uv run -m prodml.train
+uv run python -m prodml.train --model lr        # or xgboost / mlp
 ```
 
-The command downloads the configured TLC Parquet file if it is missing, prepares the data, fits the model, calculates validation metrics, and saves the model to:
+Downloads the configured TLC Parquet file if missing, prepares data, fits the model, logs the run to MLflow, saves `models/model.pkl`, and writes `metrics/new_run.json` — the file CI's quality gate reads.
 
+Current baseline numbers live in `reports/module-1.md`, not hardcoded here, since they change with whichever model was trained most recently.
+
+## Hyperparameter tuning + promotion
+
+```bash
+uv run python -m prodml.tuning
 ```
-models/model.pkl
+
+Runs an Optuna sweep on `xgboost`, registers the best trial in the MLflow model registry, and calls `promote_if_better()`: if it beats the current Production model's MAE, it's promoted, `models/model.pkl` is overwritten to match, and `metrics/production.json` is refreshed. Otherwise it's left in `Staging`.
+
+After a promotion, re-track the champion:
+```bash
+dvc add models/model.pkl
+dvc push
+git add models/model.pkl.dvc metrics/production.json
+git commit -m "Promote new champion"
 ```
 
-Current baseline results:
+## Model registry — loading by stage
 
-| Metric | Result |
-| --- | --- |
-| Validation RMSE | 6.4647 minutes |
-| Validation MAE | 3.8969 minutes |
-
-The notebook `notebooks/00-baseline.ipynb` demonstrates the same workflow, while `reports/module-1.md` records the metrics.
-
-## Structured logging
-
-The application uses Structlog to produce JSON log records. The configuration is defined in `src/prodml/logging_config.py`.
-
-The configuration is initialized by an executable entry point, while individual modules create named loggers:
+`predict.py` supports two loading paths:
 
 ```python
-import structlog
-
-logger = structlog.get_logger(__name__)
+DurationPredictor.load(settings.model_path)      # baked-in pickle — what the Docker image uses
+DurationPredictor.load_from_registry()            # live MLflow lookup, by Production stage
 ```
 
-Logs from the training module are identified as `prodml.train`, and logs from the API module are identified as `prodml.api.main`.
+The API toggles between them via `LOAD_FROM_REGISTRY` (default `false`). Local demo of "swap the model with zero code change":
 
-Important events use structured fields rather than formatted strings. A record may look like this:
+```bash
+LOAD_FROM_REGISTRY=true uv run uvicorn prodml.api.main:app --port 8000
+```
+Promote a different version to Production in the MLflow UI, restart the same command — the served prediction changes without touching any code. The deployed Docker image always uses the baked-in pickle instead, since it has no network path to a local-only MLflow instance.
 
-```json
-{
-  "message": "model_saved",
-  "path": "models/model.pkl",
-  "rmse": 6.4647,
-  "mae": 3.8969,
-  "logger": "prodml.train",
-  "level": "info",
-  "timestamp": "2026-08-21T10:00:00Z"
-}
+## Data and model versioning (DVC)
+
+```bash
+dvc pull        # fetch data/ and models/model.pkl from the B2 remote
+dvc push        # after training or promoting
 ```
 
-The API also attaches a correlation ID to request logs and returns it in the `X-Request-ID` response header.
+Every MLflow run is tagged with `data_version` — the DVC-tracked data file's md5 — so any registered model traces back to the exact bytes it was trained on.
 
 ## ONNX export and parity
 
-The serialization workflow uses the fitted Pickle artifact as the reference model. The fitted `LinearRegression` estimator is exported to ONNX after the existing `DictVectorizer` transforms the feature dictionaries into a numeric matrix.
-
-Run the export workflow with:
-
 ```bash
-uv run -m prodml.export
+uv run python -m prodml.export
 ```
 
-The workflow should select 500 validation rows, export the model to `models/model.onnx`, validate the ONNX graph, compare Pickle and ONNX predictions, and assert that the maximum difference is within `atol=1e-4`.
+Model-agnostic: dispatches to `skl2onnx` for `lr`/`xgboost` (via a registered `onnxmltools` converter for XGBoost's tree ops) and `torch.onnx.export` for `mlp`. Exports to `models/model.onnx`, validates the graph, and asserts pickle/ONNX predictions agree within `atol=1e-4` on 500 validation rows.
 
-Pickle remains the reference training artifact. ONNX is the preferred format for a portable serving implementation because it can run through ONNX Runtime without loading a Python Pickle object.
+Latency comparison:
+```bash
+uv run python scripts/benchmark_serialization.py
+```
+
+Pickle remains the format actually served (see `reports/module-1.md` for the reasoning); ONNX is exported and verified as a parity-checked alternative.
 
 ## API
-
-The initial FastAPI implementation is under `src/prodml/api/`.
-
-Start it from the repository root with:
 
 ```bash
 uv run uvicorn prodml.api.main:app --reload --port 8000
@@ -177,53 +179,60 @@ uv run uvicorn prodml.api.main:app --reload --port 8000
 
 | Endpoint | Method | Purpose |
 | --- | --- | --- |
-| `/health` | `GET` | Confirms that the model is loaded in application memory |
-| `/metadata` | `GET` | Returns model version, training date, features, framework, and artifact hash |
-| `/predict` | `POST` | Returns one taxi-duration prediction |
-| `/predict/batch` | `POST` | Returns predictions for a list of inputs |
-
-A single request has this shape:
+| `/health` | `GET` | Confirms the model is loaded in memory |
+| `/metadata` | `GET` | Model version, training date, features, framework, artifact hash |
+| `/predict` | `POST` | One prediction |
+| `/predict/batch` | `POST` | Predictions for a list of inputs |
 
 ```json
-{
-  "pu_do": "74_75",
-  "trip_distance": 1.5
-}
+// request
+{"pu_do": "74_75", "trip_distance": 1.5}
+
+// response
+{"prediction": 9.60, "model_version": "linear-regression-2024-01", "correlation_id": "...", "latency_ms": 13.2}
 ```
 
-A successful response contains the prediction, model version, correlation ID, and latency:
+The model loads once at startup via FastAPI's lifespan, not per request.
 
-```json
-{
-  "prediction": 9.60,
-  "model_version": "linear-regression-2024-01",
-  "correlation_id": "example-request-id",
-  "latency_ms": 13.2
-}
+## Docker
+
+Multi-stage build, runs as non-root (`appuser`, uid 1000):
+
+```bash
+docker build -f docker/Dockerfile -t prodml-api .
+docker run --rm -p 8000:8000 prodml-api
+docker exec <container_id> whoami   # appuser
 ```
 
-The model is loaded once during FastAPI startup through the lifespan function. The request dependency retrieves the already-loaded predictor from `app.state`; it does not reload the model for every request.
+## Testing and linting
 
-## Future work
+```bash
+uv run pytest                          # coverage gate: --cov-fail-under=70
+uv run ruff check src tests
+uv run black --check src tests
+```
 
-### Refactor testing
+## CI/CD
 
-The test suite has **not yet been fully refactored from the old model to the new decomposed model and API**. This is future work. The tests still need to be reviewed and updated to cover the current interfaces, including model training and persistence, `DurationPredictor.predict_one()`, `predict_batch()`, API validation, health and metadata responses, single and batch predictions, error responses, correlation IDs, and Pickle/ONNX parity.
+`.github/workflows/ci.yml` — three jobs, each gating the next:
 
-### Create the Dockerfile
+1. **lint** — ruff, black
+2. **test** — pytest with the coverage gate, then `scripts/check_mae_regression.py`: blocks the merge if the new run's MAE regresses more than 5% against `metrics/production.json`
+3. **build** (on `main` only) — `dvc pull`s the champion model, builds and pushes the Docker image
 
-A `Dockerfile` has **not yet been created**. Docker support is future work. It will eventually need to install the package and runtime dependencies, start Uvicorn, expose port `8000`, and include a healthcheck. The container workflow should be tested from a clean environment after the local workflow is stable.
+Requires these repo secrets: `DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`, `B2_KEY_ID`, `B2_APP_KEY`.
 
-### Other future work
+## Continuous training
 
-Other later deliverables may include pre-commit hooks, CI checks, more complete logging tests, ONNX-backed serving, load testing, monitoring, model optimization, and deployment automation. These are intentionally outside the current completed stage.
+Training happens locally, where MLflow/Postgres actually live — a GitHub-hosted runner has no network path to reach them. The loop is: retrain locally → `dvc push` → `git push` → CI gates, builds, and deploys. Schedule- and webhook-triggered retraining inside CI would need a publicly reachable MLflow tracking server; deferred, see `reports/module-2.md` for the full trade-off.
 
-## Current definition of done
+## Known gaps
 
-At the current stage, the project is complete for the baseline, decomposition, initial logging, serialization, and initial API structure when the baseline and module workflow produce the same metrics, the model is saved to `models/model.pkl`, the ONNX export creates and validates `models/model.onnx`, Pickle and ONNX pass the 500-row parity check, structured logs identify the relevant module and event, and the API loads the model at startup and responds through the four endpoints.
+- Terraform / infrastructure-as-code — not implemented.
+- Cloud-triggered continuous training (`schedule`, `repository_dispatch`) — not implemented.
 
-The project is **not yet production-ready** because test refactoring and Docker support remain future work.
+Full detail on both in `reports/module-2.md`.
 
 ## Data source
 
-The monthly data comes from the official [NYC TLC Trip Record Data page](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page).
+[NYC TLC Trip Record Data](https://www.nyc.gov/site/tlc/about/tlc-trip-record-data.page).
