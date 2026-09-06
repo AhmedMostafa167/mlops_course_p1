@@ -13,8 +13,8 @@ wheels/
 .env
 
 # assets
-models/
+/models/*
+!/models/*.dvc
 /mlflow.db
 docker/postgres-data/
-/models
 .coverage
