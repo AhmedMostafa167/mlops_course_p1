@@ -1,3 +1,4 @@
+[![CI](https://github.com/AhmedMostafa167/mlops_course_p1/actions/workflows/ci.yml/badge.svg)](https://github.com/AhmedMostafa167/mlops_course_p1/actions/workflows/ci.yml)
 # NYC Green Taxi Duration Prediction Service
 
 An MLOps pipeline built around one month of NYC TLC green taxi trip data, covering both mini projects of the course: a production-shaped FastAPI service (Module 1), and a self-gating training/promotion pipeline with MLflow, DVC, and CI (Module 2).
