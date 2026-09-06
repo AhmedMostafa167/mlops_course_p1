@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import matplotlib
+import yaml
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
@@ -37,12 +38,6 @@ class ExperimentTracker:
         self.model = model
         self.vectorizer = vectorizer
         self.model_type = model_type
-
-    def log_tags(self) -> None:
-        framework = {"lr": "sklearn", "xgboost": "xgboost", "mlp": "pytorch"}[
-            self.model_type
-        ]
-        mlflow.set_tags({"framework": framework, "author": "Ahmed Mostafa"})
 
     def log_params(self) -> None:
         """No-op for lr/xgboost — autolog already captures their hyperparameters."""
@@ -116,6 +111,30 @@ class ExperimentTracker:
             with vectorizer_path.open("wb") as f_out:
                 pickle.dump(self.vectorizer, f_out)
             mlflow.log_artifact(str(vectorizer_path), artifact_path="vectorizer")
+
+    @staticmethod
+    def _git_commit() -> str:
+        return subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        ).stdout.strip()
+
+    @staticmethod
+    def _data_version() -> str:
+        with open("data/green_tripdata_2024-01.parquet.dvc") as f:
+            return yaml.safe_load(f)["outs"][0]["md5"]
+
+    def log_tags(self) -> None:
+        framework = {"lr": "sklearn", "xgboost": "xgboost", "mlp": "pytorch"}[
+            self.model_type
+        ]
+        mlflow.set_tags(
+            {
+                "framework": framework,
+                "author": "Ahmed Mostafa",
+                "git_commit": self._git_commit(),
+                "data_version": self._data_version(),
+            }
+        )
 
     def log_model(self, input_example: np.ndarray | None = None) -> None:
         """No-op for lr/xgboost — autolog already logs their model artifact under 'model'.
