@@ -1,4 +1,5 @@
 name: CI
+
 on: [push, pull_request]
 
 jobs:
@@ -7,7 +8,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-        with: { version: "latest" }
+        with:
+          version: "latest"
       - run: uv sync --group dev
       - run: uv run ruff check src tests
       - run: uv run black --check src tests
@@ -18,11 +20,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
-        with: { version: "latest" }
+        with:
+          version: "latest"
       - run: uv sync --group dev
+      - name: Set up environment
+        run: cp .env.example .env
       - run: uv run pytest
-      - run: |
+      - name: Check MAE regression
+        run: |
           uv run python scripts/check_mae_regression.py \
             --new-metrics metrics/new_run.json \
             --production-metrics metrics/production.json \
             --max-regression-percent 5
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      - run: pip install "dvc[s3]"
+      - name: Pull champion model
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.B2_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.B2_APP_KEY }}
+        run: dvc pull models/model.pkl
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/prodml-api:${{ github.sha }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/prodml-api:latest
