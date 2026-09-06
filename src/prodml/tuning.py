@@ -9,6 +9,7 @@ from prodml.data import load_data, train_validation_split
 from prodml.evaluate import evaluate_model
 from prodml.features import get_target, prepare_features, to_feature_dicts
 from prodml.logging_config import configure_logging
+from prodml.registery import promote_if_better
 from prodml.train import fit_xgboost
 
 configure_logging()
@@ -83,6 +84,7 @@ def main():
         name=settings.REGISTERED_MODEL_NAME,
     )
     logger.info("model_registered", model_version=model_version)
+    promote_if_better(model_version.version, metric="mae")
 
 
 if __name__ == "__main__":
