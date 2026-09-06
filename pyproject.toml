@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "dvc>=3.67.1",
+    "dvc-s3>=3.3.0",
     "fastapi>=0.141.1",
     "numpy>=2.5.2",
     "pandas<3",
@@ -32,8 +33,9 @@ dev = [
     "pyarrow>=25.0.1",
     "pytest>=9.1.1",
     "skl2onnx>=1.20.0",
+    "onnxmltools>=1.16.0",
     "psycopg2-binary>=2.9.12",
-    "boto3>=1.43.83",
+    "boto3",
     "optuna>=4.9.0",
     "ruff>=0.16.5",
     "black>=26.5.1",
