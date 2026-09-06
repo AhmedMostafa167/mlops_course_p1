@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 from collections.abc import Sequence
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 
@@ -179,7 +181,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         model_path = save_model(model, vectorizer, metrics, model_type=model_type)
         size_mb = os.path.getsize(model_path) / (1024 * 1024)
         mlflow.log_metric("model_size_mb", size_mb)
-
+        metrics_out = Path("metrics/new_run.json")
+        metrics_out.parent.mkdir(parents=True, exist_ok=True)
+        metrics_out.write_text(
+            json.dumps({"mae": metrics["mae"], "rmse": metrics["rmse"]}, indent=2)
+        )
+        logger.info("metrics_recorded", path=str(metrics_out))
         logger.info(
             "training_finished",
             model_type=model_type,
