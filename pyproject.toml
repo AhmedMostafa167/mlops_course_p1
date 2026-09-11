@@ -3,11 +3,11 @@ name = "mlops_project"
 version = "0.1.0"
 description = "mini project for mlops course covering simple model serving using API endpoint with testing, structured logging, and dockerization"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.12,<3.13"
 dependencies = [
     "dvc>=3.67.1",
     "dvc-s3>=3.3.0",
-    "fastapi>=0.141.1",
+    "fastapi>=0.129.0,<0.137.0",
     "numpy>=2.5.2",
     "pandas<3",
     "pre-commit>=4.6.2",
@@ -15,6 +15,7 @@ dependencies = [
     "pydantic-settings>=2.15.0",
     "scikit-learn>=1.9.0",
     "structlog>=26.1.0",
+    "apache-airflow==3.3.1",
     "uvicorn>=0.52.3",
 ]
 
@@ -40,6 +41,7 @@ dev = [
     "ruff>=0.16.5",
     "black>=26.5.1",
     "pytest-cov>=7.1.0",
+    "graphviz>=0.21",
 ]
 [tool.pytest.ini_options]
 pythonpath = ["."]
