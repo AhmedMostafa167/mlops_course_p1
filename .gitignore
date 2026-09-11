@@ -20,3 +20,5 @@ docker/postgres-data/
 .coverage
 /docker/postgres_data
 /bucket
+/.pytest_cache
+/.ruff_cache
