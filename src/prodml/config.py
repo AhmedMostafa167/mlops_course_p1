@@ -2,7 +2,7 @@ import os
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -44,6 +44,20 @@ class Settings(BaseSettings):
     POSTGRES_PORT: int = Field(default=5432)
     MLFLOW_PORT: int = Field(default=5000)
     ARTIFACTS_BUCKET: str = Field(default="bucket")
+
+    @field_validator("data_dir", "model_dir", "model_path", "report_path", mode="before")
+    @classmethod
+    def resolve_project_path(cls, value: Path | str) -> Path:
+        """Resolve relative filesystem settings from the repository root.
+
+        Environment variables take precedence over class defaults in
+        pydantic-settings. Therefore ``MODEL_PATH=models/model.pkl`` would
+        otherwise be interpreted relative to the process working directory,
+        which is especially surprising when Uvicorn is launched from ``src``.
+        Absolute paths remain unchanged; relative paths are repository-rooted.
+        """
+        path = Path(value).expanduser()
+        return path if path.is_absolute() else PROJECT_ROOT / path
 
     @property
     def backend_store_uri(self) -> str:
