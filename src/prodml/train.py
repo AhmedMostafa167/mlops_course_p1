@@ -161,7 +161,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         "xgboost": "xgboost_with_dictvectorizer",
         "mlp": "mlp_with_dictvectorizer",
     }[model_type]
-    with mlflow.start_run(run_name=run_name):
+    with mlflow.start_run(run_name=run_name) as run:
+        run_id = run.info.run_id
         start = perf_counter()
         model, vectorizer = fit_model(train_df=train_df, model_type=model_type)
         mlflow.log_metric("train_time", perf_counter() - start)
@@ -194,6 +195,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             mae=metrics["mae"],
             model_path=str(model_path),
         )
+    return run_id   
 
 
 if __name__ == "__main__":
